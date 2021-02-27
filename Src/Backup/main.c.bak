@@ -1,0 +1,481 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  ** This notice applies to any and all portions of this file
+  * that are not between comment pairs USER CODE BEGIN and
+  * USER CODE END. Other portions of this file, whether 
+  * inserted by the user or by software development tools
+  * are owned by their respective copyright owners.
+  *
+  * COPYRIGHT(c) 2020 STMicroelectronics
+  *
+  * Redistribution and use in source and binary forms, with or without modification,
+  * are permitted provided that the following conditions are met:
+  *   1. Redistributions of source code must retain the above copyright notice,
+  *      this list of conditions and the following disclaimer.
+  *   2. Redistributions in binary form must reproduce the above copyright notice,
+  *      this list of conditions and the following disclaimer in the documentation
+  *      and/or other materials provided with the distribution.
+  *   3. Neither the name of STMicroelectronics nor the names of its contributors
+  *      may be used to endorse or promote products derived from this software
+  *      without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+uint32_t Front_edge = 0U; // передний фронт 
+uint32_t Pulse_length = 0U;
+uint32_t Falling_edge = 0U; // задний фронт
+uint32_t pFLatency;
+uint16_t Reg_FLAG = 0;// регистр флагов*/
+uint8_t Data[64] = {0}; //массив для передачи по UART
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+/*
+#define In_DS         0  //флаг инициализации DS18B20
+#define Presence_DS   1  //флаг присутствия DS18B20
+#define Slot_Read     2  //флаг создания слота чтения
+#define Slot_Write    3  //флаг создания слота записи
+#define Sl_Zero       4  //флаг создания нуля
+#define Presence_Zero 5  //флаг наличия нуля
+#define SL_One        6  //флаг создания единицы
+#define Presence_One  7  //флаг наличия еденицы
+#define Tim_ok        8  //флаг отработки захвата 
+*/
+
+//#define LCD_8_BITS    (uint8_t)9U
+
+#ifndef LCD_8_BITS
+
+ #define LCD_4_BITS      (uint8_t)5U
+
+#endif
+
+#ifdef LCD_8_BITS
+
+ #define QTY_REP      LCD_8_BITS
+
+#else
+
+ #define QTY_REP      LCD_4_BITS
+
+#endif
+#define RS       GPIO_PIN_0
+#define ENA      GPIO_PIN_2
+
+#define DB4      GPIO_PIN_3
+#define DB5      GPIO_PIN_4
+#define DB6      GPIO_PIN_5
+#define DB7      GPIO_PIN_6
+#define DB_DS    GPIO_PIN_7
+    
+#define LCD_PORT  GPIOE
+
+#define DB4_N      1
+#define DB5_N      2
+#define DB6_N      4
+#define DB7_N      8
+
+#define RS_N       4
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+uint8_t String[] = "HELLO!!!";
+uint8_t String_1[] = "NO DS18B20";
+uint8_t String_2[] = "TEMPERATURA";
+uint8_t String_3[] = "EXIST DS18B20";
+UART_HandleTypeDef  huart2;
+char TmCh = 1;
+ uint8_t str[] = "Проверка передачи UART\r\n\0";
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+
+//static void MX_GPIO_Init(void);
+//static HAL_StatusTypeDef MX_TIM6_Init(void);
+//static void MX_TIM7_Init(void);
+void Data_load_LCD(const uint8_t Data);
+void Comand_load_LCD(const uint8_t Data);
+void Init_LCD(void);
+void SendLCD(const uint8_t Data);
+void DecomString(const uint8_t String[]);
+void Init_DS (void);
+void IRQHand_htim6( void);// функция обработчика прерывания от TIM6
+void IRQHand_htim7( void);
+void IRQHand_htim1_In_DS( TIM_HandleTypeDef *htim); // обработчик для инициализации DS
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
+void LD_blinc (void);//мигание светодиодом
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_TIM1_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+ HAL_Delay(15);
+  Init_LCD();
+  
+ // RCC_ClkInitTypeDef clocks;
+  //RCC_GetClocksFreq(&clocks);
+
+  Comand_load_LCD(0x01);// чистим табло
+  HAL_Delay(2);
+  Comand_load_LCD(0x02);
+  HAL_Delay(2);
+  DecomString(String);
+    
+  Init_DS ();
+  uint8_t sh=0,sh1=0,Port=0 ;
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+   //RCC_ClkInitTypeDef clocks;
+   //uint32_t latency;
+  // HAL_RCC_GetClockConfig(&clocks,&latency);
+     char Tm_1 = 0;
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+    HAL_Delay(120);
+     if(!sh1)
+    {
+      if(sh>=8)
+      {
+        sh1 = 1;
+        continue;
+      }
+      Comand_load_LCD(0x1C);//экран вправо
+      sh++;
+      }
+     if(sh1)
+      {
+        if(sh<=0)
+        {
+          sh1 = 0;
+          continue;
+        }
+        Comand_load_LCD(0x18);//экран влево
+        sh--;
+       }
+     //if(Reg_FLAG &=(1<<Tim_ok))
+     //{
+  
+    Pulse_length = (Falling_edge);
+    snprintf(Data, 63, "Расчетный импульс %lu mks\n", Pulse_length);
+    // RCC_ClkInitTypeDef clocks ={0};
+    //  uint32_t latency; 
+    //HAL_RCC_GetClockConfig(&clocks,&latency);
+    //snprintf(Data, 63, "Частота шины APB1 %lu/n", clocks.APB1CLKDivider);
+    HAL_UART_Transmit_IT(&huart2, (uint8_t*)Data, strlen(Data));
+    //Reg_FLAG &=(0<<Tim_ok);
+     //}
+     //HAL_UART_Transmit_IT(&huart2, str, 24);
+     //HAL_Delay(500);
+  }
+}
+
+//int DS_B = 0;
+void Init_DS (void)
+{
+  HAL_TIM_IC_Start_IT(&htim1,TIM_CHANNEL_1);// запуск с прерыванием по захвату
+  HAL_TIM_IC_Start_IT(&htim1,TIM_CHANNEL_2);
+  Reg_FLAG |= (1<<In_DS);  //выставляем флаг инициализации DS
+  HAL_GPIO_WritePin(GPIOE, Ex_DS_Pin, GPIO_PIN_RESET);
+  HAL_TIM_Base_Start_IT(&htim6); // запуск  прерываний от таймера
+ }
+
+void IRQHand_htim6( void)
+{
+  HAL_TIM_Base_Stop_IT(&htim6);
+ // htim6.Instance->SR = 0;
+ // htim6.Instance->CNT = 0;
+  HAL_GPIO_WritePin(GPIOE, Ex_DS_Pin, GPIO_PIN_SET);
+  //HAL_TIM_IC_Start_IT(&htim1,TIM_CHANNEL_1);// запуск с прерыванием по захвату
+  //HAL_TIM_IC_Start_IT(&htim1,TIM_CHANNEL_2);
+  HAL_TIM_Base_Start_IT(&htim7);
+ }
+
+void IRQHand_htim7( void)
+{
+  HAL_TIM_Base_Stop_IT(&htim7);
+  htim7.Instance->SR = 0;
+  htim7.Instance->CNT = 0;
+ // HAL_TIM_IC_Stop_IT(&htim1,TIM_CHANNEL_1);
+ // HAL_TIM_IC_Stop_IT(&htim1,TIM_CHANNEL_2);
+  HAL_GPIO_WritePin(GPIOE, Ex_DS_Pin, GPIO_PIN_RESET);
+  HAL_TIM_Base_Start_IT(&htim6);
+ }
+
+
+void IRQHand_htim1_In_DS(TIM_HandleTypeDef *htim)
+{
+  if((Front_edge)&&(Falling_edge))
+  {
+    //RCC_ClkInitTypeDef clocks;
+   // HAL_RCC_GetClockConfig(&clocks,&pFLatency);
+    //Pulse_length = (Front_edge - Falling_edge)*(1/(clocks.APB1CLKDivider));
+   // sprintf(Data,"%c",Pulse_length);
+   // HAL_UART_Transmit_IT(&huart2, Data,11);
+    
+    Reg_FLAG |= (1<<Presence_DS); // выставляем флаг присутствия датчика
+  }
+  else 
+  {
+    Reg_FLAG &= (0<<Presence_DS); //снимаем флаг присутствия датчика
+  }
+  
+}
+
+/*void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM1)
+    {
+        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+        {
+            period = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);
+            pulseWidth = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_2);
+      
+            TIM1->CNT = 0;
+        }
+    }
+}*/
+
+
+void Init_LCD (void)
+{
+ SendLCD(DB5_N|DB4_N) ;
+ HAL_Delay(5);
+ SendLCD(DB5_N|DB4_N) ;
+ HAL_Delay(1);
+ SendLCD(DB5_N|DB4_N) ;
+ 
+ SendLCD(DB5_N) ;
+ 
+ SendLCD(DB5_N);
+ SendLCD(DB7_N|DB6_N);
+ 
+ SendLCD(0);
+ SendLCD(DB7_N); 
+ 
+ SendLCD(0);
+ SendLCD(DB4_N); 
+ 
+ SendLCD(0);
+ SendLCD(DB5_N|DB4_N);
+
+ SendLCD(NULL);
+ SendLCD(DB7_N|DB6_N); 
+  }
+ 
+ void Data_load_LCD(const uint8_t Data) 
+{
+   uint8_t DataSend=0 ;
+   DataSend=(Data&0xf0)>>4 ;
+   DataSend|= (1<<RS_N) ;
+   SendLCD(DataSend);
+   
+   DataSend=Data&0x0f ;
+   DataSend|= (1<<RS_N) ;
+   SendLCD(DataSend); 
+  }
+
+void Comand_load_LCD(const uint8_t Data)
+{
+   uint8_t DataSend=0 ;
+   DataSend=(Data&0xf0)>>4 ;
+   DataSend|= (0<<RS_N) ;
+   SendLCD(DataSend);
+   
+   DataSend=Data&0x0f ;
+   DataSend|= (0<<RS_N) ;
+   SendLCD(DataSend);
+}
+
+void SendLCD(const uint8_t Data)   
+{
+ GPIO_PinState Action ;   
+ for ( uint8_t i=0; i<QTY_REP; i++ )
+ {
+   if( ( Data & ( 1<<i ) ) )             
+   {
+     Action=GPIO_PIN_SET;
+   }
+   else
+   {
+     Action=GPIO_PIN_RESET;
+   }
+   switch ( i )
+   {
+      case 0:  HAL_GPIO_WritePin(LCD_PORT, DB4, Action); break;// DB4    
+      case 1:  HAL_GPIO_WritePin(LCD_PORT, DB5, Action); break; //DB5       
+      case 2:  HAL_GPIO_WritePin(LCD_PORT, DB6, Action); break;//DB6       
+      case 3:  HAL_GPIO_WritePin(LCD_PORT, DB7, Action); break;//DB7 
+      case 4:  HAL_GPIO_WritePin(LCD_PORT, RS, Action) ; break;//RS
+     default: break;
+   }      
+  }
+  HAL_GPIO_WritePin(LCD_PORT, ENA, GPIO_PIN_SET);// E=1
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(LCD_PORT, ENA, GPIO_PIN_RESET);// E=0
+  HAL_Delay(1);   
+ }
+
+void DecomString(const uint8_t String[])
+{
+  for (uint8_t i=0;i<(strlen(String));i++)
+  {
+    Data_load_LCD(String[i]);
+  }
+  
+}
+  /* USER CODE END 3 */
+
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /**Initializes the CPU, AHB and APB busses clocks 
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 15;
+  RCC_OscInitStruct.PLL.PLLN = 192;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Initializes the CPU, AHB and APB busses clocks 
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV16;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV16;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{ 
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
